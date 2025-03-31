@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Groot Call</title>
+    <script src="https://unpkg.com/peerjs@1.3.2/dist/peerjs.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            background: #0a0a0a;
+            color: white;
+            margin: 0;
+            padding: 0;
+        }
+        .container {
+            max-width: 900px;
+            margin: auto;
+            padding: 20px;
+        }
+        h2 {
+            color: #0ff;
+            text-shadow: 0 0 10px #0ff;
+            font-weight: bold;
+        }
+        .video-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 20px;
+            margin: 20px 0;
+        }
+        video {
+            width: 45%;
+            border-radius: 15px;
+            border: 4px solid #0ff;
+            box-shadow: 0px 0px 15px #0ff;
+        }
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 20px;
+        }
+        button {
+            background: #0ff;
+            color: black;
+            padding: 12px 20px;
+            font-size: 16px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            transition: 0.3s;
+            box-shadow: 0px 0px 15px #0ff;
+        }
+        button:hover {
+            background: #00bbff;
+            box-shadow: 0px 0px 20px #00bbff;
+        }
+        .id-box {
+            margin-top: 10px;
+            padding: 10px;
+            background: #111;
+            border-radius: 8px;
+            font-weight: bold;
+            color: #0ff;
+            border: 2px solid #0ff;
+            box-shadow: 0px 0px 10px #0ff;
+        }
+        .message-box {
+            margin-top: 10px;
+            font-size: 18px;
+            font-weight: bold;
+            color: yellow;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>🔵 Groot Call</h2>
+        <div class="video-container">
+            <video id="localVideo" autoplay muted></video>
+            <video id="remoteVideo" autoplay></video>
+        </div>
+        
+        <div class="controls">
+            <input type="text" id="peerId" placeholder="Enter 3-digit ID">
+            <button onclick="startCall()">📞 Start Call</button>
+            <button onclick="endCall()">❌ End Call</button>
+            <button onclick="toggleMute()">🔇 Mute</button>
+            <button onclick="toggleCamera()">📷 Camera Off</button>
+        </div>
+        
+        <h3>Your ID:</h3>
+        <div class="id-box" id="myId">Generating...</div>
+
+        <div class="message-box" id="messageBox">Waiting for others to join...</div>
+    </div>
+    
+    <script>
+        let localStream;
+        let currentCall;
+        let isMuted = false;
+        let isCameraOff = false;
+        const peer = new Peer(generateNumericId());
+        let conn;
+
+        peer.on('open', id => {
+            document.getElementById('myId').innerText = id;
+        });
+
+        // Generate a 3-digit numeric ID for the peer
+        function generateNumericId() {
+            return Math.floor(100 + Math.random() * 900).toString(); // Generates a 3-digit number
+        }
+
+        // Request media permissions when page loads
+        async function getMedia() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                document.getElementById('localVideo').srcObject = stream;
+                localStream = stream;
+            } catch (error) {
+                alert('Error accessing camera or microphone: ' + error.message);
+            }
+        }
+
+        // Start the video call
+        function startCall() {
+            const peerId = document.getElementById('peerId').value;
+            if (!peerId) return alert("Enter a Peer ID");
+
+            // Ensure media permissions are granted before starting the call
+            getMedia().then(() => {
+                // Show waiting message to the first user
+                document.getElementById('messageBox').innerText = "Waiting for other user to join...";
+
+                // Attempt to connect to the other peer
+                conn = peer.connect(peerId);
+                conn.on('open', () => {
+                    // Connection established with the second user
+                    console.log("Connected to peer");
+                    document.getElementById('messageBox').innerText = "Connected. You can now start talking!";
+                });
+
+                // Make the video call
+                const call = peer.call(peerId, localStream);
+                call.on('stream', remoteStream => {
+                    document.getElementById('remoteVideo').srcObject = remoteStream;
+                    document.getElementById('messageBox').innerText = "Other user has joined. Start talking!";
+                });
+
+                currentCall = call;
+            }).catch(error => {
+                console.error("Media permission denied or error occurred: ", error);
+            });
+        }
+
+        // Handle incoming call from other user
+        peer.on('call', (incomingCall) => {
+            document.getElementById('messageBox').innerText = "Incoming call...";
+
+            // Answer the call and send the local stream
+            incomingCall.answer(localStream);
+            incomingCall.on('stream', remoteStream => {
+                document.getElementById('remoteVideo').srcObject = remoteStream;
+                document.getElementById('messageBox').innerText = "Call answered. Start talking!";
+            });
+            currentCall = incomingCall;
+        });
+
+        // End the call
+        function endCall() {
+            if (currentCall) {
+                currentCall.close();
+                document.getElementById('remoteVideo').srcObject = null;
+                document.getElementById('messageBox').innerText = "Call ended.";
+            }
+        }
+
+        // Mute or unmute the audio
+        function toggleMute() {
+            if (!localStream) return;
+            const audioTrack = localStream.getAudioTracks()[0];
+            isMuted = !isMuted;
+            audioTrack.enabled = !isMuted;
+        }
+
+        // Turn the camera off or on
+        function toggleCamera() {
+            if (!localStream) return;
+            const videoTrack = localStream.getVideoTracks()[0];
+            isCameraOff = !isCameraOff;
+            videoTrack.enabled = !isCameraOff;
+        }
+
+        // Request permissions immediately after the page loads
+        getMedia();
+    </script>
+</body>
+</html>
