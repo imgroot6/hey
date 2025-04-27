@@ -304,6 +304,40 @@
       }
     }
 
+    /* Loading spinner */
+    .spinner {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.7);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+    }
+    
+    .spinner-content {
+      text-align: center;
+      color: var(--primary);
+    }
+    
+    .spinner-circle {
+      border: 5px solid rgba(255, 215, 0, 0.3);
+      border-radius: 50%;
+      border-top: 5px solid var(--primary);
+      width: 50px;
+      height: 50px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 20px;
+    }
+    
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
     @media (max-width: 1024px) {
       .video-container {
         flex-direction: column;
@@ -350,6 +384,12 @@
 </head>
 <body>
   <div class="particles" id="particles"></div>
+  <div class="spinner" id="spinner">
+    <div class="spinner-content">
+      <div class="spinner-circle"></div>
+      <p>Requesting camera and microphone access...</p>
+    </div>
+  </div>
   
   <div class="container">
     <h2>🌌 Groot Call</h2>
@@ -384,24 +424,91 @@
     let isMuted = false;
     let isCameraOff = false;
     let callWindow = null;
+    let peer;
 
-    const peer = new Peer(generateNumericId());
+    // Initialize PeerJS with error handling
+    function initializePeer() {
+      try {
+        peer = new Peer(generateNumericId());
+        
+        peer.on('open', id => {
+          document.getElementById('myId').innerText = id;
+          console.log("My Peer ID: ", id);
+        });
 
-    peer.on('open', id => {
-      document.getElementById('myId').innerText = id;
-      console.log("My Peer ID: ", id);
-    });
+        peer.on('error', err => {
+          console.error('PeerJS error:', err);
+          alert('Connection error: ' + err.message);
+          hideSpinner();
+        });
+
+        setupCallHandlers();
+      } catch (err) {
+        console.error('PeerJS initialization failed:', err);
+        alert('Failed to initialize video call system');
+        hideSpinner();
+      }
+    }
+
+    function showSpinner() {
+      document.getElementById('spinner').style.display = 'flex';
+    }
+
+    function hideSpinner() {
+      document.getElementById('spinner').style.display = 'none';
+    }
 
     async function getMedia() {
+      showSpinner();
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          video: true, 
+          audio: true 
+        });
         document.getElementById('localVideo').srcObject = stream;
         localStream = stream;
+        hideSpinner();
         return stream;
       } catch (error) {
-        alert('Error accessing media: ' + error.message);
+        console.error('Media access error:', error);
+        hideSpinner();
+        alert('Error accessing camera/microphone: ' + error.message);
         throw error;
       }
+    }
+
+    function setupCallHandlers() {
+      peer.on('call', async (incomingCall) => {
+        document.getElementById('messageBox').innerText = "Incoming connection request...";
+
+        try {
+          if (!localStream) {
+            await getMedia();
+          }
+
+          incomingCall.answer(localStream);
+          
+          incomingCall.on('stream', (remoteStream) => {
+            document.getElementById('remoteVideo').srcObject = remoteStream;
+            document.getElementById('messageBox').innerText = "Connection established!";
+            openCallWindow(remoteStream);
+          });
+
+          incomingCall.on('error', err => {
+            console.error("Call error: ", err);
+            document.getElementById('messageBox').innerText = "Call error occurred";
+          });
+
+          incomingCall.on('close', () => {
+            endCall();
+          });
+
+          currentCall = incomingCall;
+        } catch (err) {
+          console.error('Error handling incoming call:', err);
+          document.getElementById('messageBox').innerText = "Error accepting call";
+        }
+      });
     }
 
     function openCallWindow(remoteStream) {
@@ -413,6 +520,11 @@
       // Open new call window
       callWindow = window.open('', '_blank', 'width=1200,height=800,top=100,left=100');
       
+      if (!callWindow) {
+        alert('Popup window blocked. Please allow popups for this site.');
+        return;
+      }
+
       // Write the call interface HTML
       callWindow.document.write(`
         <!DOCTYPE html>
@@ -438,6 +550,7 @@
               flex: 1;
               display: flex;
               position: relative;
+              background: #000;
             }
             .remote-video {
               width: 100%;
@@ -446,7 +559,7 @@
             }
             .local-video {
               position: absolute;
-              bottom: 20px;
+              bottom: 80px;
               right: 20px;
               width: 25%;
               max-width: 300px;
@@ -473,6 +586,9 @@
               font-size: 24px;
               cursor: pointer;
               transition: all 0.2s;
+              display: flex;
+              align-items: center;
+              justify-content: center;
             }
             .control-btn:hover {
               background: rgba(255, 255, 255, 0.2);
@@ -493,105 +609,116 @@
               border-radius: 20px;
               z-index: 20;
             }
+            .caller-name {
+              position: absolute;
+              bottom: 20px;
+              left: 20px;
+              background: rgba(0, 0, 0, 0.5);
+              padding: 5px 15px;
+              border-radius: 20px;
+              z-index: 20;
+            }
           </style>
         </head>
         <body>
           <div class="call-container">
             <div class="video-grid">
-              <video class="remote-video" id="remoteVideoCall" autoplay></video>
-              <video class="local-video" id="localVideoCall" autoplay muted></video>
+              <video class="remote-video" id="remoteVideoCall" autoplay playsinline></video>
+              <video class="local-video" id="localVideoCall" autoplay muted playsinline></video>
               <div class="call-info">Call in progress</div>
+              <div class="caller-name">Caller: ${document.getElementById('myId').innerText}</div>
             </div>
             <div class="controls">
-              <button class="control-btn" onclick="window.opener.toggleMute()">🎙️</button>
-              <button class="control-btn" onclick="window.opener.toggleCamera()">🎥</button>
-              <button class="control-btn end-call" onclick="window.opener.endCall()">⏹</button>
+              <button class="control-btn" onclick="window.opener.toggleMute()" title="Mute">🎙️</button>
+              <button class="control-btn" onclick="window.opener.toggleCamera()" title="Camera">🎥</button>
+              <button class="control-btn end-call" onclick="window.opener.endCall()" title="End Call">⏹</button>
             </div>
           </div>
           <script>
             // Set video streams from parent window
-            document.getElementById('remoteVideoCall').srcObject = window.opener.document.getElementById('remoteVideo').srcObject;
-            document.getElementById('localVideoCall').srcObject = window.opener.document.getElementById('localVideo').srcObject;
-            
-            // Close window when call ends
-            window.addEventListener('beforeunload', function() {
-              window.opener.endCall();
-            });
+            try {
+              document.getElementById('remoteVideoCall').srcObject = window.opener.document.getElementById('remoteVideo').srcObject;
+              document.getElementById('localVideoCall').srcObject = window.opener.document.getElementById('localVideo').srcObject;
+              
+              // Close window when call ends
+              window.addEventListener('beforeunload', function() {
+                if (window.opener && !window.opener.closed) {
+                  window.opener.endCall();
+                }
+              });
+            } catch (err) {
+              console.error('Error setting up call window:', err);
+              document.body.innerHTML = '<div style="color:white;padding:20px;text-align:center;"><h2>Error loading call</h2><p>Please return to the main window</p></div>';
+            }
           </script>
         </body>
         </html>
       `);
       
       // Set video streams in the call window
-      callWindow.document.getElementById('remoteVideoCall').srcObject = remoteStream;
-      callWindow.document.getElementById('localVideoCall').srcObject = localStream;
-      
-      // Focus on the call window
-      callWindow.focus();
-    }
-
-    peer.on('call', async (incomingCall) => {
-      document.getElementById('messageBox').innerText = "Incoming connection request...";
-
-      if (!localStream) {
-        await getMedia();
-      }
-
-      incomingCall.answer(localStream);
-      incomingCall.on('stream', (remoteStream) => {
-        document.getElementById('remoteVideo').srcObject = remoteStream;
-        document.getElementById('messageBox').innerText = "Connection established!";
-        openCallWindow(remoteStream);
-      });
-
-      incomingCall.on('error', err => console.error("Connection error: ", err));
-      incomingCall.on('close', () => {
-        document.getElementById('remoteVideo').srcObject = null;
-        document.getElementById('messageBox').innerText = "Connection terminated";
+      try {
+        callWindow.document.getElementById('remoteVideoCall').srcObject = remoteStream;
+        callWindow.document.getElementById('localVideoCall').srcObject = localStream;
+        callWindow.focus();
+      } catch (err) {
+        console.error('Error setting up call window:', err);
         if (callWindow && !callWindow.closed) {
           callWindow.close();
         }
-      });
+      }
+    }
 
-      currentCall = incomingCall;
-    });
+    async function startCall() {
+      const peerId = document.getElementById('peerId').value.trim();
+      if (!peerId || peerId.length !== 3) {
+        alert("Please enter a valid 3-digit Peer ID");
+        return;
+      }
 
-    function startCall() {
-      const peerId = document.getElementById('peerId').value;
-      if (!peerId) return alert("Please enter a Peer ID");
+      try {
+        showSpinner();
+        if (!localStream) {
+          await getMedia();
+        }
 
-      getMedia().then(() => {
         const call = peer.call(peerId, localStream);
-
+        
         call.on('stream', (remoteStream) => {
           document.getElementById('remoteVideo').srcObject = remoteStream;
           document.getElementById('messageBox').innerText = "Connection successful!";
           openCallWindow(remoteStream);
+          hideSpinner();
         });
 
-        call.on('error', err => console.error("Connection error: ", err));
+        call.on('error', err => {
+          console.error("Call error: ", err);
+          document.getElementById('messageBox').innerText = "Call failed";
+          hideSpinner();
+        });
+
         call.on('close', () => {
-          document.getElementById('remoteVideo').srcObject = null;
-          document.getElementById('messageBox').innerText = "Connection terminated";
-          if (callWindow && !callWindow.closed) {
-            callWindow.close();
-          }
+          endCall();
+          hideSpinner();
         });
 
         currentCall = call;
         document.getElementById('messageBox').innerText = "Connecting to " + peerId + "...";
-      });
+      } catch (err) {
+        console.error('Error starting call:', err);
+        document.getElementById('messageBox').innerText = "Error starting call";
+        hideSpinner();
+      }
     }
 
     function endCall() {
       if (currentCall) {
         currentCall.close();
-        currentCall = null;
-        document.getElementById('remoteVideo').srcObject = null;
-        document.getElementById('messageBox').innerText = "Connection terminated";
-        if (callWindow && !callWindow.closed) {
-          callWindow.close();
-        }
+      }
+      currentCall = null;
+      document.getElementById('remoteVideo').srcObject = null;
+      document.getElementById('messageBox').innerText = "Connection terminated";
+      if (callWindow && !callWindow.closed) {
+        callWindow.close();
       }
     }
 
@@ -615,7 +742,6 @@
       return Math.floor(100 + Math.random() * 900).toString();
     }
 
-    // Create floating particles
     function createParticles() {
       const particlesContainer = document.getElementById('particles');
       const particleCount = 50;
@@ -648,8 +774,13 @@
 
     // Initialize
     window.onload = function() {
-      getMedia();
       createParticles();
+      initializePeer();
+      
+      // Request media access immediately
+      getMedia().catch(err => {
+        console.error('Initial media access failed:', err);
+      });
       
       // Close call window if main window is closed
       window.addEventListener('beforeunload', function() {
