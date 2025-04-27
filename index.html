@@ -304,68 +304,6 @@
       }
     }
 
-    /* Full-screen call styles */
-    .fullscreen-call {
-      display: none;
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: #000;
-      z-index: 1000;
-    }
-
-    .call-container {
-      display: flex;
-      width: 100%;
-      height: 100%;
-    }
-
-    .remote-video-fullscreen {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
-
-    .local-video-fullscreen {
-      position: absolute;
-      bottom: 20px;
-      right: 20px;
-      width: 20%;
-      max-width: 300px;
-      border: 2px solid var(--primary);
-      border-radius: 10px;
-      box-shadow: 0 0 20px var(--primary);
-    }
-
-    .call-controls {
-      position: absolute;
-      bottom: 20px;
-      left: 50%;
-      transform: translateX(-50%);
-      display: flex;
-      gap: 15px;
-      z-index: 1001;
-    }
-
-    .call-btn {
-      background: rgba(0, 0, 0, 0.5);
-      color: white;
-      border: none;
-      border-radius: 50%;
-      width: 60px;
-      height: 60px;
-      font-size: 24px;
-      cursor: pointer;
-      transition: all 0.3s;
-    }
-
-    .call-btn:hover {
-      background: rgba(255, 255, 255, 0.2);
-      transform: scale(1.1);
-    }
-
     @media (max-width: 1024px) {
       .video-container {
         flex-direction: column;
@@ -407,16 +345,6 @@
       input[type="text"] {
         width: 160px;
       }
-
-      .local-video-fullscreen {
-        width: 30%;
-      }
-
-      .call-btn {
-        width: 50px;
-        height: 50px;
-        font-size: 20px;
-      }
     }
   </style>
 </head>
@@ -450,24 +378,12 @@
     <div class="message-box" id="messageBox">Awaiting connection...</div>
   </div>
 
-  <!-- Full-screen call container (hidden by default) -->
-  <div class="fullscreen-call" id="fullscreenCall">
-    <div class="call-container">
-      <video class="remote-video-fullscreen" id="remoteVideoFullscreen" autoplay></video>
-      <video class="local-video-fullscreen" id="localVideoFullscreen" autoplay muted></video>
-      <div class="call-controls">
-        <button class="call-btn" onclick="toggleFullscreenMute()">🎙️</button>
-        <button class="call-btn" onclick="toggleFullscreenCamera()">🎥</button>
-        <button class="call-btn" style="background: #ff0000;" onclick="endFullscreenCall()">⏹</button>
-      </div>
-    </div>
-  </div>
-
   <script>
     let localStream;
     let currentCall;
     let isMuted = false;
     let isCameraOff = false;
+    let callWindow = null;
 
     const peer = new Peer(generateNumericId());
 
@@ -480,7 +396,6 @@
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         document.getElementById('localVideo').srcObject = stream;
-        document.getElementById('localVideoFullscreen').srcObject = stream;
         localStream = stream;
         return stream;
       } catch (error) {
@@ -489,42 +404,134 @@
       }
     }
 
-    function startFullscreenCall(remoteStream) {
-      document.getElementById('fullscreenCall').style.display = 'block';
-      document.getElementById('remoteVideoFullscreen').srcObject = remoteStream;
-      document.body.style.overflow = 'hidden';
-      
-      // Request fullscreen
-      if (document.documentElement.requestFullscreen) {
-        document.documentElement.requestFullscreen().catch(err => {
-          console.log("Fullscreen error: ", err);
-        });
+    function openCallWindow(remoteStream) {
+      // Close previous call window if exists
+      if (callWindow && !callWindow.closed) {
+        callWindow.close();
       }
-    }
 
-    function endFullscreenCall() {
-      document.getElementById('fullscreenCall').style.display = 'none';
-      document.body.style.overflow = 'auto';
+      // Open new call window
+      callWindow = window.open('', '_blank', 'width=1200,height=800,top=100,left=100');
       
-      // Exit fullscreen
-      if (document.exitFullscreen) {
-        document.exitFullscreen();
-      }
+      // Write the call interface HTML
+      callWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Groot Call - Active</title>
+          <style>
+            body {
+              margin: 0;
+              padding: 0;
+              background: #000;
+              color: white;
+              font-family: Arial, sans-serif;
+              overflow: hidden;
+              height: 100vh;
+            }
+            .call-container {
+              display: flex;
+              flex-direction: column;
+              height: 100vh;
+            }
+            .video-grid {
+              flex: 1;
+              display: flex;
+              position: relative;
+            }
+            .remote-video {
+              width: 100%;
+              height: 100%;
+              object-fit: cover;
+            }
+            .local-video {
+              position: absolute;
+              bottom: 20px;
+              right: 20px;
+              width: 25%;
+              max-width: 300px;
+              border: 3px solid gold;
+              border-radius: 10px;
+              box-shadow: 0 0 20px gold;
+              z-index: 10;
+            }
+            .controls {
+              display: flex;
+              justify-content: center;
+              gap: 20px;
+              padding: 15px;
+              background: rgba(0, 0, 0, 0.7);
+              z-index: 20;
+            }
+            .control-btn {
+              background: rgba(255, 255, 255, 0.1);
+              border: none;
+              border-radius: 50%;
+              width: 60px;
+              height: 60px;
+              color: white;
+              font-size: 24px;
+              cursor: pointer;
+              transition: all 0.2s;
+            }
+            .control-btn:hover {
+              background: rgba(255, 255, 255, 0.2);
+              transform: scale(1.1);
+            }
+            .end-call {
+              background: #ff0000;
+            }
+            .end-call:hover {
+              background: #ff3333;
+            }
+            .call-info {
+              position: absolute;
+              top: 20px;
+              left: 20px;
+              background: rgba(0, 0, 0, 0.5);
+              padding: 10px 20px;
+              border-radius: 20px;
+              z-index: 20;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="call-container">
+            <div class="video-grid">
+              <video class="remote-video" id="remoteVideoCall" autoplay></video>
+              <video class="local-video" id="localVideoCall" autoplay muted></video>
+              <div class="call-info">Call in progress</div>
+            </div>
+            <div class="controls">
+              <button class="control-btn" onclick="window.opener.toggleMute()">🎙️</button>
+              <button class="control-btn" onclick="window.opener.toggleCamera()">🎥</button>
+              <button class="control-btn end-call" onclick="window.opener.endCall()">⏹</button>
+            </div>
+          </div>
+          <script>
+            // Set video streams from parent window
+            document.getElementById('remoteVideoCall').srcObject = window.opener.document.getElementById('remoteVideo').srcObject;
+            document.getElementById('localVideoCall').srcObject = window.opener.document.getElementById('localVideo').srcObject;
+            
+            // Close window when call ends
+            window.addEventListener('beforeunload', function() {
+              window.opener.endCall();
+            });
+          </script>
+        </body>
+        </html>
+      `);
       
-      endCall();
-    }
-
-    function toggleFullscreenMute() {
-      toggleMute();
-    }
-
-    function toggleFullscreenCamera() {
-      toggleCamera();
+      // Set video streams in the call window
+      callWindow.document.getElementById('remoteVideoCall').srcObject = remoteStream;
+      callWindow.document.getElementById('localVideoCall').srcObject = localStream;
+      
+      // Focus on the call window
+      callWindow.focus();
     }
 
     peer.on('call', async (incomingCall) => {
       document.getElementById('messageBox').innerText = "Incoming connection request...";
-      console.log("Incoming call from: ", incomingCall.peer);
 
       if (!localStream) {
         await getMedia();
@@ -534,14 +541,16 @@
       incomingCall.on('stream', (remoteStream) => {
         document.getElementById('remoteVideo').srcObject = remoteStream;
         document.getElementById('messageBox').innerText = "Connection established!";
-        startFullscreenCall(remoteStream);
+        openCallWindow(remoteStream);
       });
 
       incomingCall.on('error', err => console.error("Connection error: ", err));
       incomingCall.on('close', () => {
         document.getElementById('remoteVideo').srcObject = null;
         document.getElementById('messageBox').innerText = "Connection terminated";
-        endFullscreenCall();
+        if (callWindow && !callWindow.closed) {
+          callWindow.close();
+        }
       });
 
       currentCall = incomingCall;
@@ -557,14 +566,16 @@
         call.on('stream', (remoteStream) => {
           document.getElementById('remoteVideo').srcObject = remoteStream;
           document.getElementById('messageBox').innerText = "Connection successful!";
-          startFullscreenCall(remoteStream);
+          openCallWindow(remoteStream);
         });
 
         call.on('error', err => console.error("Connection error: ", err));
         call.on('close', () => {
           document.getElementById('remoteVideo').srcObject = null;
           document.getElementById('messageBox').innerText = "Connection terminated";
-          endFullscreenCall();
+          if (callWindow && !callWindow.closed) {
+            callWindow.close();
+          }
         });
 
         currentCall = call;
@@ -578,6 +589,9 @@
         currentCall = null;
         document.getElementById('remoteVideo').srcObject = null;
         document.getElementById('messageBox').innerText = "Connection terminated";
+        if (callWindow && !callWindow.closed) {
+          callWindow.close();
+        }
       }
     }
 
@@ -636,6 +650,13 @@
     window.onload = function() {
       getMedia();
       createParticles();
+      
+      // Close call window if main window is closed
+      window.addEventListener('beforeunload', function() {
+        if (callWindow && !callWindow.closed) {
+          callWindow.close();
+        }
+      });
     };
   </script>
 </body>
